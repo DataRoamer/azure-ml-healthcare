@@ -5,7 +5,7 @@ type: command
 experiment_name: healthcare-github-actions
 display_name: healthcare-training-run
 
-compute: azureml:mycompute
+compute: azureml:cpu-cluster
 
 code: .
 
