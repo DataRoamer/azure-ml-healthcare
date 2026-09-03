@@ -1,0 +1,21 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+type: command
+
+experiment_name: healthcare-github-actions
+display_name: healthcare-training-run
+
+compute: azureml:mycompute
+
+code: .
+
+command: >-
+  python training_script.py
+  --n_estimators 50
+  --max_depth 5
+
+environment: azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu@latest
+
+inputs:
+  n_estimators: 50
+  max_depth: 5
