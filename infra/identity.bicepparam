@@ -4,9 +4,9 @@ using './identity.bicep'
 //   az ml workspace list -o table
 //   az ml workspace show -n <workspace> -g <rg> --query storage_account -o tsv
 param workspaceName = 'automl_exp'
-param storageAccountName = '<the storage account your workspace already uses>'
+param storageAccountName = 'automlexp5779979870'
 
-param githubOwner = '<your-github-username>'
+param githubOwner = 'DataRoamer'
 param githubRepo = 'azure-ml-healthcare'
 
 param identityName = 'id-ai300-github'
