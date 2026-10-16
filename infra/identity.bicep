@@ -1,14 +1,11 @@
-// =============================================================================
-// AI-300 Step 1.4 — the CI identity, as code.
-//
-// This template deploys into your EXISTING resource group and creates nothing
-// billable: one user-assigned managed identity, one federated credential, and
-// two role assignments. It does NOT create a workspace, storage account,
-// key vault or registry — it references the ones you already have.
+// Managed identity used by GitHub Actions to submit Azure ML jobs,
+// with only the permissions it needs.
+// Deploys into an existing resource group and creates no billable resources:
+// one managed identity, two federated credentials and two role assignments.
+// The workspace and its storage account must already exist.
 //
 // Preview:  az deployment group what-if -g <rg> -f infra/identity.bicep -p infra/identity.bicepparam
 // Deploy:   az deployment group create  -g <rg> -f infra/identity.bicep -p infra/identity.bicepparam
-// =============================================================================
 
 targetScope = 'resourceGroup'
 
@@ -32,11 +29,11 @@ param identityName string = 'id-ai300-github'
 
 param location string = resourceGroup().location
 
-// Built-in role definition IDs. Verified against the built-in role list.
+// Azure built-in role IDs.
 var azureMLDataScientist = 'f6c7c914-8db3-469d-8ca1-694a8f32e121'
 var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
-// --- Existing resources: referenced, never created or modified --------------
+// Existing workspace and storage. This file does not create or change them.
 
 resource workspace 'Microsoft.MachineLearningServices/workspaces@2023-10-01' existing = {
   name: workspaceName
@@ -46,16 +43,15 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
 }
 
-// --- The identity GitHub will become ----------------------------------------
+// Identity that GitHub Actions signs in as.
 
 resource ciIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
   location: location
 }
 
-// --- The trust relationship that replaces the client secret -----------------
-// subject is an EXACT match. This one covers pushes to main and nothing else.
-// A tag, a pull request or another branch each need their own credential.
+// Trust GitHub login tokens, but only for pushes to the main branch of this repo.
+// The subject must match exactly, so other branches, tags and pull requests are not trusted.
 
 resource federationMain 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
   parent: ciIdentity
@@ -67,15 +63,9 @@ resource federationMain 'Microsoft.ManagedIdentity/userAssignedIdentities/federa
   }
 }
 
-// The second context. Note what is NOT happening here: this is not an extra
-// permission, and it does not widen anything. Both credentials lead to the same
-// identity holding the same two roles. All that differs is which workflow
-// context Entra ID will accept a token from.
-//
-// The gotcha worth experiencing: the moment a job declares
-// `environment: production`, its token's subject becomes the environment form
-// and STOPS being the ref form — even on a push to main. So a job with an
-// environment will fail against the credential above until this one exists.
+// Second trust rule, for jobs that run in the GitHub 'production' environment,
+// which can require someone to approve a run. It adds no extra permissions.
+// A job that uses an environment sends a different token subject, so it needs this rule.
 resource federationEnvironment 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
   parent: ciIdentity
   name: 'github-env-${githubEnvironment}'
@@ -84,17 +74,12 @@ resource federationEnvironment 'Microsoft.ManagedIdentity/userAssignedIdentities
     subject: 'repo:${githubOwner}/${githubRepo}:environment:${githubEnvironment}'
     audiences: [ 'api://AzureADTokenExchange' ]
   }
-  // Federated credentials on one identity must be created one at a time.
+  // Federated credentials on one identity must be added one at a time.
   dependsOn: [ federationMain ]
 }
 
-// --- Least privilege --------------------------------------------------------
-
-// Scoped to the workspace, not the resource group or subscription.
-// Data Scientist can submit and manage jobs. Its NotActions exclude creating
-// or deleting compute and modifying the workspace, so CI cannot delete the
-// workspace it runs against. Submitting a job to an existing cluster triggers
-// autoscale on its own, so no compute role is needed.
+// Lets the identity submit jobs to this workspace only.
+// It cannot delete the workspace or create compute.
 resource dataScientistOnWorkspace 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(workspace.id, ciIdentity.id, azureMLDataScientist)
   scope: workspace
@@ -105,9 +90,8 @@ resource dataScientistOnWorkspace 'Microsoft.Authorization/roleAssignments@2022-
   }
 }
 
-// The data-plane half from Step 1.2. Job submission uploads a code snapshot to
-// the workspace default datastore, which is blob content — the workspace role
-// above does not cover it.
+// Lets the identity upload the code snapshot to the workspace storage,
+// which every job submission needs.
 resource blobWriterOnStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storage.id, ciIdentity.id, storageBlobDataContributor)
   scope: storage
@@ -118,7 +102,7 @@ resource blobWriterOnStorage 'Microsoft.Authorization/roleAssignments@2022-04-01
   }
 }
 
-// --- Outputs: identifiers, not credentials ----------------------------------
+// Values to copy into GitHub. These are identifiers, not passwords.
 
 output clientId string = ciIdentity.properties.clientId
 output principalId string = ciIdentity.properties.principalId

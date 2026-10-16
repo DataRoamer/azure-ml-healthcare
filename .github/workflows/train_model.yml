@@ -30,5 +30,4 @@ jobs:
           az ml job create \
             --file train_job.yml \
             --workspace-name automl_exp \
-            --resource-group automl_exp \
-            --subscription e0da413c-131e-444d-a4f6-47b3875e9121
+            --resource-group automl_exp
